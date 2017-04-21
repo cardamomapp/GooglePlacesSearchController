@@ -11,6 +11,7 @@
 
 import UIKit
 import CoreLocation
+import IQKeyboardManagerSwift
 
 public enum PlaceType: CustomStringConvertible {
     case all
@@ -19,7 +20,7 @@ public enum PlaceType: CustomStringConvertible {
     case establishment
     case regions
     case cities
-    
+
     public var description : String {
         switch self {
         case .all: return ""
@@ -113,7 +114,7 @@ open class PlaceDetails: CustomStringConvertible {
     open var ISOcountryCode         = ""
     open var state                  = ""
     
-    let raw: [String: AnyObject]
+    open let raw: [String: AnyObject]
     
     init(json: [String: AnyObject]) {
         func component(_ component: String, inArray array: [[String: AnyObject]], ofType: String) -> String {
@@ -132,33 +133,48 @@ open class PlaceDetails: CustomStringConvertible {
         
         let result = json["result"] as! [String: AnyObject]
         
-        name = result["name"] as! String
-        formattedAddress = result["formatted_address"] as! String
-        formattedPhoneNo = result["formatted_phone_number"] as? String
-        
-        let geometry = result["geometry"] as! [String: AnyObject]
-        let location = geometry["location"] as! [String: AnyObject]
-        let latitude = location["lat"] as! CLLocationDegrees
-        let longitude = location["lng"] as! CLLocationDegrees
-        coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-        
-        let addressComponents = result["address_components"] as! [[String: AnyObject]]
-        
-        streetNumber = component("street_number", inArray: addressComponents, ofType: "short_name")
-        route = component("route", inArray: addressComponents, ofType: "short_name")
-        subLocality = component("subLocality", inArray: addressComponents, ofType: "long_name")
-        locality = component("locality", inArray: addressComponents, ofType: "long_name")
-        postalCode = component("postal_code", inArray: addressComponents, ofType: "long_name")
-        administrativeArea = component("administrative_area_level_1", inArray: addressComponents, ofType: "long_name")
-        subAdministrativeArea = component("administrative_area_level_2", inArray: addressComponents, ofType: "long_name")
-        country = component("country", inArray: addressComponents, ofType: "long_name")
-        ISOcountryCode = component("country", inArray: addressComponents, ofType: "short_name")
-        
+        if result["name"] != nil {
+            name = result["name"] as! String
+            formattedAddress = result["formatted_address"] as! String
+            formattedPhoneNo = result["formatted_phone_number"] as? String
+
+            let geometry = result["geometry"] as! [String: AnyObject]
+            let location = geometry["location"] as! [String: AnyObject]
+            let latitude = location["lat"] as! CLLocationDegrees
+            let longitude = location["lng"] as! CLLocationDegrees
+            coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+
+            let addressComponents = result["address_components"] as! [[String: AnyObject]]
+
+            streetNumber = component("street_number", inArray: addressComponents, ofType: "short_name")
+            route = component("route", inArray: addressComponents, ofType: "short_name")
+            subLocality = component("subLocality", inArray: addressComponents, ofType: "long_name")
+            locality = component("locality", inArray: addressComponents, ofType: "long_name")
+            postalCode = component("postal_code", inArray: addressComponents, ofType: "long_name")
+            administrativeArea = component("administrative_area_level_1", inArray: addressComponents, ofType: "long_name")
+            subAdministrativeArea = component("administrative_area_level_2", inArray: addressComponents, ofType: "long_name")
+            country = component("country", inArray: addressComponents, ofType: "long_name")
+            ISOcountryCode = component("country", inArray: addressComponents, ofType: "short_name")
+        } else {
+            name = ""
+            formattedAddress = ""
+            formattedPhoneNo = ""
+            coordinate = CLLocationCoordinate2D()
+            streetNumber = ""
+            route = ""
+            subLocality = ""
+            locality = ""
+            postalCode = ""
+            administrativeArea = ""
+            subAdministrativeArea = ""
+            country = ""
+            ISOcountryCode = ""
+        }
         raw = json
     }
     
     open var description: String {
-        return "\nPlace: \(name).\nAddress: \(formattedAddress).\ncoordinate: (\(coordinate.latitude), \(coordinate.longitude))\nPhone No.: \(formattedPhoneNo)\n"
+        return "\nPlace: \(name).\nAddress: \(formattedAddress).\ncoordinate: (\(coordinate.latitude), \(coordinate.longitude))\nPhone No.: \(String(describing: formattedPhoneNo))\n"
     }
 }
 
@@ -179,20 +195,53 @@ open class GooglePlacesSearchController: UISearchController, UISearchBarDelegate
         )
         
         self.init(searchResultsController: gpaViewController)
-        
+
         self.googleSearchBar = searchBar
-        
+        self.googleSearchBar?.barTintColor = UIColor.white
+
         self.gpaViewController = gpaViewController
         
         self.searchResultsUpdater = gpaViewController
         self.hidesNavigationBarDuringPresentation = false
 //        self.dimsBackgroundDuringPresentation = false
-        self.searchBar.placeholder = "Enter Address"
+        if placeType == .cities || placeType == .regions {
+            self.searchBar.placeholder = "Enter City"
+        } else {
+            self.searchBar.placeholder = "Enter Address"
+        }
     }
     
     override open var searchBar: UISearchBar {
         get {
+            super.searchBar.barTintColor = UIColor.white
+
+            for searchBarSubview: UIView in super.searchBar.subviews {
+                var found : Bool = false
+                if searchBarSubview is UITextInputTraits {
+                    found = true
+                    (searchBarSubview as! UITextField).addDoneOnKeyboardWithTarget(self, action: #selector(GooglePlacesSearchController.doneAction(_:)))
+                }
+
+                if super.searchBar.subviews.count==1 && found == false {
+                    for subview: UIView in searchBarSubview.subviews {
+                        if subview is UITextInputTraits {
+                            found = true
+                            (subview as! UITextField).addDoneOnKeyboardWithTarget(self, action: #selector(GooglePlacesSearchController.doneAction(_:)))
+                        }
+                    }
+                }
+            }
+
             return googleSearchBar ?? super.searchBar
+        }
+    }
+
+    func doneAction(_ barButton: UIBarButtonItem) {
+        if let text = self.searchBar.text, text.characters.count > 0 {
+            self.view.endEditing(true)
+            IQKeyboardManager.sharedManager().enableAutoToolbar = false
+            let placeDummy: PlaceDetails = PlaceDetails(json: ["result": [:] as NSDictionary, "CustomCity": self.searchBar.text! as NSString])
+            gpaViewController.closure?(placeDummy)
         }
     }
     
@@ -231,6 +280,7 @@ open class GooglePlacesAutocompleteContainer: UITableViewController, UISearchRes
         tableView.register(GooglePlaceTableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.estimatedRowHeight = 44.0
         tableView.rowHeight = UITableViewAutomaticDimension
+        tableView.tableFooterView = UIView()
         
         //FIXME: Dynamic fonts updating
         //Dynamic fonts observer
@@ -245,7 +295,6 @@ open class GooglePlacesAutocompleteContainer: UITableViewController, UISearchRes
 // MARK: - GooglePlacesAutocompleteContainer
 private class GooglePlaceTableViewCell: UITableViewCell {
     
-    var nameLabel = UILabel()
     var addressLabel = UILabel()
     
     override init(style: UITableViewCellStyle, reuseIdentifier: String!) {
@@ -253,29 +302,21 @@ private class GooglePlaceTableViewCell: UITableViewCell {
         
         self.selectionStyle = UITableViewCellSelectionStyle.gray
         
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
         addressLabel.translatesAutoresizingMaskIntoConstraints = false
-        
-        nameLabel.textColor = UIColor.black
-        nameLabel.backgroundColor = UIColor.white
-        nameLabel.font = UIFont.preferredFont(forTextStyle: UIFontTextStyle.headline)
         
         addressLabel.textColor = UIColor(hue: 0.9972, saturation: 0, brightness: 0.54, alpha: 1.0)
         addressLabel.backgroundColor = UIColor.white
         addressLabel.font = UIFont.preferredFont(forTextStyle: UIFontTextStyle.footnote)
         addressLabel.numberOfLines = 0
         
-        contentView.addSubview(nameLabel)
         contentView.addSubview(addressLabel)
         
         let viewsDict = [
-            "name" : nameLabel,
             "address" : addressLabel
         ]
         
-        contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "V:|-[name]-[address]-|", options: NSLayoutFormatOptions(rawValue: 0), metrics: nil, views: viewsDict))
-        contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "H:|-[name]-|", options: NSLayoutFormatOptions(rawValue: 0), metrics: nil, views: viewsDict))
-        contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "H:|-[address]-|", options: NSLayoutFormatOptions(rawValue: 0), metrics: nil, views: viewsDict))
+        contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat:"V:|-[address]-|", options: NSLayoutFormatOptions(rawValue: 0), metrics: nil, views: viewsDict))
+        contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat:"H:|-[address]-|", options: NSLayoutFormatOptions(rawValue: 0), metrics: nil, views: viewsDict))
     }
     
     required init?(coder: NSCoder) {
@@ -295,9 +336,19 @@ extension GooglePlacesAutocompleteContainer {
         let place = self.places[indexPath.row]
         
         // Configure the cell
-        cell.nameLabel.text = place.name
-        
-        cell.addressLabel.text = place.description
+        var text: String
+        if let name = place.name, name.characters.count > 0 {
+            text = place.name! + "," + place.description
+            let num = Int(place.name!.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))
+            if num != nil {
+                text = place.name! + " " + place.description
+            } else {
+                text = place.name! + "," + place.description
+            }
+        } else {
+            text = place.description
+        }
+        cell.addressLabel.text = text.replacingOccurrences(of: ",", with: ", ")
         cell.accessoryType = UITableViewCellAccessoryType.disclosureIndicator
         
         return cell
@@ -306,6 +357,8 @@ extension GooglePlacesAutocompleteContainer {
     override open func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         
         let place = places[indexPath.row]
+
+        IQKeyboardManager.sharedManager().enableAutoToolbar = false
         
         place.getDetails { [unowned self] details in
             self.closure?(details)
@@ -341,7 +394,7 @@ extension GooglePlacesAutocompleteContainer: UISearchBarDelegate {
         ]
         if CLLocationCoordinate2DIsValid(self.coordinate) {
 
-            params["location"] = "\(coordinate.latitude),\(coordinate.longitude)"
+            // params["location"] = "\(coordinate.latitude),\(coordinate.longitude)"
             if radius > 0 {
                 params["radius"] = "\(radius)"
             }
@@ -416,10 +469,6 @@ class GooglePlacesRequestHelpers {
     
     fileprivate class func doRequest(_ urlString: String, params: [String: String], success: @escaping (NSDictionary) -> ()) {
         if let url = URL(string: "\(urlString)?\(query(params as [String : AnyObject]))"){
-            
-            let request = NSMutableURLRequest(
-                url:url
-            )
             
             let session = URLSession.shared
             
